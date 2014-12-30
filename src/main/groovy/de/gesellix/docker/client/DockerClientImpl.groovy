@@ -33,9 +33,15 @@ class DockerClientImpl implements DockerClient {
       private client
 
       @Override
+      void setClient(HttpClient client) {
+        super.setClient(client)
+        this.client = client
+      }
+
+      @Override
       HttpClient getClient() {
-        if (client == null) {
-          this.client = httpClientFactory.createOldHttpClient()
+        if (this.client == null) {
+          setClient(httpClientFactory.createOldHttpClient())
         }
         return this.client
       }

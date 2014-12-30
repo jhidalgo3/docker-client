@@ -1,13 +1,12 @@
 package de.gesellix.docker.client
 
-import co.freeside.betamax.Betamax
-import co.freeside.betamax.MatchRule
-import co.freeside.betamax.Recorder
-import co.freeside.betamax.httpclient.BetamaxRoutePlanner
-import co.freeside.betamax.tape.yaml.OrderedPropertyComparator
-import co.freeside.betamax.tape.yaml.TapePropertyUtils
+import co.freeside.betamax.MatchRules
+import co.freeside.betamax.ProxyConfiguration
+import co.freeside.betamax.TapeMode
+import co.freeside.betamax.httpclient.BetamaxHttpClient
+import co.freeside.betamax.junit.Betamax
+import co.freeside.betamax.junit.RecorderRule
 import org.junit.Rule
-import org.yaml.snakeyaml.introspector.Property
 import spock.lang.Specification
 
 class DockerClientImplIntegrationSpec extends Specification {
@@ -19,21 +18,20 @@ class DockerClientImplIntegrationSpec extends Specification {
                      "email"        : "tobias@gesellix.de",
                      "serveraddress": "https://index.docker.io/v1/"]
 
+  def betamaxConfig = ProxyConfiguration.builder()
+      .defaultMode(TapeMode.READ_WRITE)
+      .sslEnabled(true).build()
+
   @Rule
-  Recorder recorder = new Recorder()
+  RecorderRule recorder = new RecorderRule(betamaxConfig)
 
   def setup() {
-    // see https://github.com/robfletcher/betamax/issues/141#issuecomment-48077632
-    TapePropertyUtils.metaClass.sort = { Set<Property> properties, List<String> names ->
-      new LinkedHashSet(properties.sort(true, new OrderedPropertyComparator(names)))
-    }
-
     def defaultDockerHost = System.env.DOCKER_HOST?.replaceFirst("tcp://", "http://")
     dockerClient = new DockerClientImpl(dockerHost: defaultDockerHost ?: "http://172.17.42.1:4243/")
-    BetamaxRoutePlanner.configure(dockerClient.delegate.client)
+    dockerClient.delegate.client = new BetamaxHttpClient(betamaxConfig, recorder)
   }
 
-  @Betamax(tape = 'info', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'info', match = [MatchRules.method, MatchRules.path])
   def info() {
     when:
     def info = dockerClient.info()
@@ -65,7 +63,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     info.SwapLimit == 0
   }
 
-  @Betamax(tape = 'version', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'version', match = [MatchRules.method, MatchRules.path])
   def version() {
     when:
     def version = dockerClient.version()
@@ -81,7 +79,7 @@ class DockerClientImplIntegrationSpec extends Specification {
         Version      : "1.4.1"]
   }
 
-  @Betamax(tape = 'auth', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'auth', match = [MatchRules.method, MatchRules.path])
   def auth() {
     given:
     def authPlain = authDetails
@@ -93,7 +91,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     authResult == 200
   }
 
-  @Betamax(tape = 'build image', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'build image', match = [MatchRules.method, MatchRules.path])
   def "build image"() {
     given:
     def buildContext = getClass().getResourceAsStream("build/build.tar")
@@ -105,7 +103,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     buildResult == "d4b25cd3fe1d"
   }
 
-  @Betamax(tape = 'build image with unknown base image', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'build image with unknown base image', match = [MatchRules.method, MatchRules.path])
   def "build image with unknown base image"() {
     given:
     def buildContext = getClass().getResourceAsStream("build/build_with_unknown_base_image.tar")
@@ -120,7 +118,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     ex.detail.error == "Error: image missing/image:latest not found"
   }
 
-  @Betamax(tape = 'tag image', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'tag image', match = [MatchRules.method, MatchRules.path])
   def "tag image"() {
     given:
     def imageId = dockerClient.pull("scratch")
@@ -136,7 +134,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     dockerClient.rmi(imageName)
   }
 
-  @Betamax(tape = 'push image', match = [MatchRule.method, MatchRule.path, MatchRule.query, MatchRule.headers])
+  @Betamax(tape = 'push image', match = [MatchRules.method, MatchRules.path, MatchRules.query, MatchRules.headers])
   def "push image"() {
     given:
     def authBase64Encoded = dockerClient.encodeAuthConfig(authDetails)
@@ -154,7 +152,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     dockerClient.rmi(imageName)
   }
 
-  @Betamax(tape = 'push image with registry', match = [MatchRule.method, MatchRule.path, MatchRule.query, MatchRule.headers])
+  @Betamax(tape = 'push image with registry', match = [MatchRules.method, MatchRules.path, MatchRules.query, MatchRules.headers])
   def "push image with registry"() {
     given:
     def authBase64Encoded = dockerClient.encodeAuthConfig(authDetails)
@@ -172,7 +170,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     dockerClient.rmi(imageName)
   }
 
-  @Betamax(tape = 'push image with undefined authentication', match = [MatchRule.method, MatchRule.path, MatchRule.query, MatchRule.headers])
+  @Betamax(tape = 'push image with undefined authentication', match = [MatchRules.method, MatchRules.path, MatchRules.query, MatchRules.headers])
   def "push image with undefined authentication"() {
     given:
     def imageId = dockerClient.pull("scratch")
@@ -189,7 +187,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     dockerClient.rmi(imageName)
   }
 
-  @Betamax(tape = 'pull image', match = [MatchRule.method, MatchRule.path, MatchRule.query])
+  @Betamax(tape = 'pull image', match = [MatchRules.method, MatchRules.path, MatchRules.query])
   def "pull image"() {
     when:
     def imageId = dockerClient.pull("scratch")
@@ -198,7 +196,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     imageId == "511136ea3c5a"
   }
 
-  @Betamax(tape = 'pull image from private registry', match = [MatchRule.method, MatchRule.path, MatchRule.query])
+  @Betamax(tape = 'pull image from private registry', match = [MatchRules.method, MatchRules.path, MatchRules.query])
   def "pull image from private registry"() {
     given:
     dockerClient.pull("scratch")
@@ -211,7 +209,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     imageId == "511136ea3c5a"
   }
 
-  @Betamax(tape = 'list containers', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'list containers', match = [MatchRules.method, MatchRules.path])
   def "list containers"() {
     given:
     def imageId = dockerClient.pull("busybox", "latest")
@@ -235,7 +233,7 @@ class DockerClientImplIntegrationSpec extends Specification {
      "Status" : "Up Less than a second"] in containers
   }
 
-  @Betamax(tape = 'inspect container', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'inspect container', match = [MatchRules.method, MatchRules.path])
   def "inspect container"() {
     given:
     def imageId = dockerClient.pull("busybox", "latest")
@@ -268,7 +266,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     dockerClient.rmi(imageName)
   }
 
-  @Betamax(tape = 'list images', match = [MatchRule.method, MatchRule.path, MatchRule.query])
+  @Betamax(tape = 'list images', match = [MatchRules.method, MatchRules.path, MatchRules.query])
   def "list images"() {
     when:
     def images = dockerClient.images()
@@ -282,7 +280,7 @@ class DockerClientImplIntegrationSpec extends Specification {
      "VirtualSize": 0] in images
   }
 
-  @Betamax(tape = 'list images with intermediate layers', match = [MatchRule.method, MatchRule.path, MatchRule.query])
+  @Betamax(tape = 'list images with intermediate layers', match = [MatchRules.method, MatchRules.path, MatchRules.query])
   def "list images with intermediate layers"() {
     when:
     def images = dockerClient.images([all: true])
@@ -320,7 +318,7 @@ class DockerClientImplIntegrationSpec extends Specification {
      VirtualSize: 0] in images
   }
 
-  @Betamax(tape = 'list images filtered', match = [MatchRule.method, MatchRule.path, MatchRule.query])
+  @Betamax(tape = 'list images filtered', match = [MatchRules.method, MatchRules.path, MatchRules.query])
   def "list images filtered"() {
     when:
     def images = dockerClient.images([filters: '{"dangling":["true"]}'])
@@ -331,7 +329,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     }
   }
 
-  @Betamax(tape = 'create container', match = [MatchRule.method, MatchRule.path, MatchRule.query])
+  @Betamax(tape = 'create container', match = [MatchRules.method, MatchRules.path, MatchRules.query])
   def "create container"() {
     given:
     def imageId = dockerClient.pull("busybox", "latest")
@@ -345,7 +343,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     containerInfo.Id == "0e5b9cdeadf2f8231dc56f2b490841a9831981bf182a17880d90e1f54a61affd"
   }
 
-  @Betamax(tape = 'create container with name', match = [MatchRule.method, MatchRule.path, MatchRule.query])
+  @Betamax(tape = 'create container with name', match = [MatchRules.method, MatchRules.path, MatchRules.query])
   def "create container with name"() {
     given:
     dockerClient.rm("example")
@@ -360,7 +358,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     containerInfo.Id == "696687a9650f3e009c34074e8773e1f17cb15b8ed9c4401a944d63eff550727b"
   }
 
-  @Betamax(tape = 'create container with unknown base image', match = [MatchRule.method, MatchRule.path, MatchRule.query])
+  @Betamax(tape = 'create container with unknown base image', match = [MatchRules.method, MatchRules.path, MatchRules.query])
   def "create container with unknown base image"() {
     given:
     dockerClient.rm("example")
@@ -377,7 +375,7 @@ class DockerClientImplIntegrationSpec extends Specification {
                   errorDetail: [message: "Tag unkown not found in repository busybox"]]
   }
 
-  @Betamax(tape = 'start container', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'start container', match = [MatchRules.method, MatchRules.path])
   def "start container"() {
     given:
     def imageId = dockerClient.pull("busybox", "latest")
@@ -392,7 +390,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     startContainerResult == 204
   }
 
-  @Betamax(tape = 'run container with existing base image', match = [MatchRule.method, MatchRule.path, MatchRule.query])
+  @Betamax(tape = 'run container with existing base image', match = [MatchRules.method, MatchRules.path, MatchRules.query])
   def "run container with existing base image"() {
     given:
     def imageName = "busybox"
@@ -413,7 +411,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     dockerClient.rm(containerStatus.container.Id)
   }
 
-  @Betamax(tape = 'run container with PortBindings', match = [MatchRule.method, MatchRule.path, MatchRule.query])
+  @Betamax(tape = 'run container with PortBindings', match = [MatchRules.method, MatchRules.path, MatchRules.query])
   def "run container with PortBindings"() {
     given:
     def imageName = "busybox"
@@ -445,7 +443,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     dockerClient.stop(containerStatus.container.Id)
   }
 
-  @Betamax(tape = 'run container with name', match = [MatchRule.method, MatchRule.path, MatchRule.query])
+  @Betamax(tape = 'run container with name', match = [MatchRules.method, MatchRules.path, MatchRules.query])
   def "run container with name"() {
     given:
     def imageName = "busybox"
@@ -469,7 +467,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     dockerClient.stop(containerStatus.container.Id)
   }
 
-  @Betamax(tape = 'stop container', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'stop container', match = [MatchRules.method, MatchRules.path])
   def "stop container"() {
     given:
     def imageName = "busybox"
@@ -486,7 +484,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     result == 204
   }
 
-  @Betamax(tape = 'wait container', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'wait container', match = [MatchRules.method, MatchRules.path])
   def "wait container"() {
     given:
     def imageName = "busybox"
@@ -506,7 +504,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     result.response.StatusCode == -1
   }
 
-  @Betamax(tape = 'rm container', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'rm container', match = [MatchRules.method, MatchRules.path])
   def "rm container"() {
     given:
     def imageId = dockerClient.pull("busybox", "latest")
@@ -521,7 +519,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     rmContainerResult == 204
   }
 
-  @Betamax(tape = 'rm unkown container', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'rm unkown container', match = [MatchRules.method, MatchRules.path])
   def "rm unknown container"() {
     when:
     def rmContainerResult = dockerClient.rm("a_not_so_random_id")
@@ -530,7 +528,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     rmContainerResult == 404
   }
 
-  @Betamax(tape = 'rm image', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'rm image', match = [MatchRules.method, MatchRules.path])
   def "rm image"() {
     given:
     def imageId = dockerClient.pull("scratch", "latest")
@@ -543,7 +541,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     rmImageResult == 200
   }
 
-  @Betamax(tape = 'rm unkown image', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'rm unkown image', match = [MatchRules.method, MatchRules.path])
   def "rm unkown image"() {
     when:
     def rmImageResult = dockerClient.rmi("an_unkown_image")
@@ -552,7 +550,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     rmImageResult == 404
   }
 
-  @Betamax(tape = 'rm image with existing container', match = [MatchRule.method, MatchRule.path])
+  @Betamax(tape = 'rm image with existing container', match = [MatchRules.method, MatchRules.path])
   def "rm image with existing container"() {
     given:
     def imageId = dockerClient.pull("busybox", "latest")
@@ -570,7 +568,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     rmImageResult == 200
   }
 
-  @Betamax(tape = 'exec create', match = [MatchRule.method, MatchRule.path, MatchRule.body])
+  @Betamax(tape = 'exec create', match = [MatchRules.method, MatchRules.path, MatchRules.body])
   def "exec create"() {
     given:
     def imageName = "busybox"
@@ -596,7 +594,7 @@ class DockerClientImplIntegrationSpec extends Specification {
     dockerClient.rm(name)
   }
 
-  @Betamax(tape = 'exec start', match = [MatchRule.method, MatchRule.path, MatchRule.body])
+  @Betamax(tape = 'exec start', match = [MatchRules.method, MatchRules.path, MatchRules.body])
   def "exec start"() {
     given:
     def imageName = "busybox"
